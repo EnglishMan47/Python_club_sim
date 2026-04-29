@@ -1,21 +1,14 @@
 """
-CYBER ZONE — Симуляция компьютерного клуба  (v6)
-
-Чисто-функциональная архитектура (Hexagonal / Clean):
-  L1 DATA       неизменяемые namedtuple-структуры и конфигурация
-  L2 FUNCTIONS  чистые переходы состояния (tick_*, apply_command)
-  L3 SHELL      WebSocket-сервер (server.py) + браузерный фронтенд (index.html)
-
-Этот модуль содержит ТОЛЬКО L1+L2. Никаких побочных эффектов.
+Симуляция компьютерного клуба
+  L1 Данные - неизменяемые namedtuple-структуры и конфигурация
+  L2 Функции - чистые переходы состояния (tick_*, apply_command)
+  L3 Оболочка - WebSocket-сервер (server.py, index.html)
 """
 
 import os, math
 from collections import namedtuple
 
-# ═══════════════════════════════════════════════════════════════
-# L1 — ДАННЫЕ
-# ═══════════════════════════════════════════════════════════════
-
+# L1
 RngState = namedtuple("RngState", ["seed"])
 def rng_new(seed):    return RngState(seed=abs(seed) or 1)
 def rng_next(rng):
@@ -40,7 +33,7 @@ def fmt_money(n):
     n = 0 if not isinstance(n, (int, float)) or math.isnan(n) else n
     return f"{n:.0f}₽"
 
-# ── Конфигурация ─────────────────────────────────────────────────
+# Конфигурация
 CONFIG = {
     "open": 7*60, "close": 26*60,   # 07:00 – 02:00
     "pc": 30, "vip": 5, "console": 5,
@@ -84,10 +77,10 @@ PROMOTIONS = [
 
 Food = namedtuple("Food", ["name","price","prep_time","cost"])
 MENU = (
-    Food("Энергетик",       85,1, 35),
-    Food("Вода",            90,1, 20),
-    Food("Лимонад",         80,1, 30),
-    Food("Чипсы",           60,1, 25),
+    Food("Энергетик",85,1,35),
+    Food("Вода",90,1,20),
+    Food("Лимонад",80,1,30),
+    Food("Чипсы",60,1,25),
     Food("Шоколадный батончик",120,1,45),
     Food("Бургер с картофелем",350,5,150),
 )
@@ -109,7 +102,7 @@ CONSOLE_GAMES = (
     Game("Split Fiction","Co-op",2), Game("The Quarry","Horror",2),
 )
 
-# Имена-запасные (используются если файлы не найдены)
+# Имена-запасные (используются если файлы с данными не найдены)
 _FALLBACK_NAMES = {
     "m":{"names":["Артём","Дмитрий","Максим","Иван","Александр","Михаил",
                    "Даниил","Кирилл","Егор","Никита","Матвей","Роман",
@@ -161,7 +154,7 @@ def load_names_data(nf="names.txt", sf="surnames.txt"):
         except OSError: pass
     _p(nf, "names"); _p(sf, "surnames")
     for g in ("m","f"):
-        if not out[g]["names"]:    out[g]["names"]    = list(_FALLBACK_NAMES[g]["names"])
+        if not out[g]["names"]: out[g]["names"] = list(_FALLBACK_NAMES[g]["names"])
         if not out[g]["surnames"]: out[g]["surnames"] = list(_FALLBACK_NAMES[g]["surnames"])
     return out
 
@@ -290,10 +283,8 @@ Log=namedtuple("Log",["time","text","type"])
 ChatMsg=namedtuple("ChatMsg",["time","sender","text","seat","kind"])
 LoungeSlot=namedtuple("LoungeSlot",["client","arrived_time","patience"])
 Order=namedtuple("Order",["id","client_id","session_id","food","status","worker_id"])
-# target_seat_id: seat where worker is currently serving (after delivery, before returning to bar)
 HallWorker=namedtuple("HallWorker",["id","name","status","timer","order_id","appearance","target_seat_id"])
 AdminState=namedtuple("AdminState",["status","timer","target","group_members"])
-# EntranceSlot: client waiting at the entrance panel before joining the queue
 EntranceSlot=namedtuple("EntranceSlot",["client","timer"])
 
 Session=namedtuple("Session",[
@@ -351,7 +342,7 @@ World=namedtuple("World",[
     "served","lost_clients",
     "next_client","next_session","next_group","next_order",
     "arrival_timer",
-    "entrance",        # tuple[EntranceSlot] — клиенты на панели «Вход» до перехода в очередь
+    "entrance",     
     "logs","chats","promotions",
     "names_data","phrases_data",
     "last_action",
@@ -368,7 +359,7 @@ _WORKER_APPEARANCES = (
 
 def initial_state(seed=42, names_data=None, phrases_data=None):
     cfg = CONFIG
-    nd = names_data   if names_data   is not None else load_names_data()
+    nd = names_data if names_data is not None else load_names_data()
     pd = phrases_data if phrases_data is not None else load_phrases()
     rng0 = rng_new(seed ^ 0xABCD)
     an,  rng0 = rng_pick(rng0, nd["f"]["names"])
@@ -403,10 +394,7 @@ def initial_state(seed=42, names_data=None, phrases_data=None):
         bathroom_clients=(),
     )
 
-# ═══════════════════════════════════════════════════════════════
-# L2 — ФУНКЦИИ
-# ═══════════════════════════════════════════════════════════════
-
+# L2
 def active_promotions(st):
     return tuple(p for p in st.promotions
                  if p["active"] and p["from"]<=st.time<p["to"] and st.weekday in p["days"])
@@ -452,11 +440,9 @@ def _seat_dec(seats, sid):
     if idx is not None: out[idx]=out[idx]._replace(occupants=max(0,out[idx].occupants-1))
     return tuple(out)
 
-# ── tick_entrance: перемещает клиентов из панели «Вход» в очередь ──
 def tick_entrance(st):
     """
-    Клиенты проводят 2 тика на панели «Вход», затем переходят в очередь.
-    Запускается первым в пайплайне, до tick_arrivals.
+    Клиенты проводят 2 тика на панели «Вход», затем переходят в очередь к администратору
     """
     ready = []
     still_waiting = []
@@ -487,24 +473,24 @@ def tick_arrivals(st):
             grp,rng=make_group(nc,t,ng,rng,st.names_data)
             if total_free==0 and len(lounge)>=CONFIG["lounge_cap"]:
                 lost+=len(grp)
-                logs.append(Log(t,f"❌ Группа из {len(grp)} ушла — клуб полон","leave"))
+                logs.append(Log(t,f"Группа из {len(grp)} ушла — клуб полон","leave"))
                 last=f"Группа из {len(grp)} ушла — клуб полон"
             else:
                 # Группа появляется на панели «Вход» на 2 тика
                 for m in grp:
                     entrance_list.append(EntranceSlot(m, 2))
-                logs.append(Log(t,f"👥 Группа «{grp[0].name} и друзья» ({len(grp)} чел) → {grp[0].game.name}","arrival"))
+                logs.append(Log(t,f"Группа «{grp[0].name} и друзья» ({len(grp)} чел) → {grp[0].game.name}","arrival"))
                 last=f"Группа «{grp[0].name}» пришла"
             nc+=len(grp); ng+=1
         else:
             cl,rng=make_client(nc,t,rng,st.names_data)
             if cl.reservation:
                 resvs.append(Reservation(cl.id,cl,cl.reservation_time,cl.pref))
-                logs.append(Log(t,f"📋 {cl.name} забронировал {cl.pref} на {fmt_time(cl.reservation_time)}","reservation"))
+                logs.append(Log(t,f"{cl.name} забронировал {cl.pref} на {fmt_time(cl.reservation_time)}","reservation"))
                 last=f"{cl.name} забронировал место"
             elif total_free==0 and len(lounge)>=CONFIG["lounge_cap"]:
                 lost+=1
-                logs.append(Log(t,f"❌ {cl.name} ушёл — клуб полон","leave"))
+                logs.append(Log(t,f"{cl.name} ушёл — клуб полон","leave"))
                 last=f"{cl.name} ушёл — полон"
             else:
                 # Клиент появляется на панели «Вход» на 2 тика перед переходом в очередь
@@ -525,7 +511,7 @@ def tick_arrivals(st):
     due=[r for r in resvs if t>=r.time]; remaining=[r for r in resvs if t<r.time]
     for rv in due:
         queue.insert(0,rv.client)
-        logs.append(Log(t,f"📋 {rv.client.name} пришёл по брони","reservation"))
+        logs.append(Log(t,f"{rv.client.name} пришёл по брони","reservation"))
         last=f"{rv.client.name} пришёл по брони"
 
     return st._replace(
@@ -539,8 +525,8 @@ def tick_lounge(st):
     t=st.time; logs=list(st.logs); kept=[]; last=st.last_action
     for lc in st.lounge:
         if lc.patience<=1:
-            logs.append(Log(t,f"🚪 {lc.client.name} устал ждать и ушёл","leave"))
-            last=f"{lc.client.name} ушёл из лаунжа"
+            logs.append(Log(t,f" {lc.client.name} устал ждать и ушёл","leave"))
+            last=f"{lc.client.name} ушёл из лаунж-зоны"
         else:
             kept.append(lc._replace(patience=lc.patience-1))
     return st._replace(lounge=tuple(kept),logs=tuple(logs),last_action=last)
@@ -593,7 +579,7 @@ def tick_admin(st):
         li=_pick_lounge(lounge,seats,st.reservations,t)
         if li is not None:
             lc=lounge.pop(li); admin=AdminState("seating_lounge",1,lc.client,None)
-            logs.append(Log(t,f"👔 Админ обслуживает {lc.client.name} (из лаунжа)","activity"))
+            logs.append(Log(t,f"Админ обслуживает {lc.client.name} (из лаунж-зоны)","activity"))
             last=f"Админ обслуживает {lc.client.name}"
         elif queue:
             head=queue[0]
@@ -627,7 +613,7 @@ def tick_admin(st):
                         for m,s in zip(members,chosen):
                             ses,rng=_start_ses(sid,m,s,t,promos,rng)
                             sessions.append(ses); sid+=1; seats=_seat_inc(seats,s.id)
-                    logs.append(Log(t,f"🎮 Группа за местами: {', '.join(m.name for m in members)}","session"))
+                    logs.append(Log(t,f"Группа за местами: {', '.join(m.name for m in members)}","session"))
                     last=f"Группа рассажена"
                 else:
                     for m in members:
@@ -635,9 +621,9 @@ def tick_admin(st):
                             pat,rng=rng_int(rng,15,30)
                             lounge.append(LoungeSlot(m,t,pat))
                         else:
-                            logs.append(Log(t,f"❌ {m.name} ушёл — лаунж полон","leave"))
-                    logs.append(Log(t,"🛋️ Группа в лаунж","activity"))
-                    last="Группа отправлена в лаунж"
+                            logs.append(Log(t,f"{m.name} ушёл — лаунж-зона забита","leave"))
+                    logs.append(Log(t,"Группа в лаунж-зону","activity"))
+                    last="Группа отправлена в лаунж-зону"
             else:
                 cl=target; seat=_find_seat(seats,st.reservations,t,cl)
                 if seat is not None:
@@ -645,16 +631,16 @@ def tick_admin(st):
                     sessions.append(ses); sid+=1; seats=_seat_inc(seats,seat.id)
                     tname=TARIFFS[seat.type][cl.tariff]["name"]
                     ptxt=f" — {fmt_money(ses.fixed_price)}" if ses.fixed_price>0 else ""
-                    logs.append(Log(t,f"✅ {cl.name} → {seat.id} ({cl.game.name}, {tname}){ptxt}","session"))
+                    logs.append(Log(t,f"{cl.name} → {seat.id} ({cl.game.name}, {tname}){ptxt}","session"))
                     last=f"{cl.name} → {seat.id}"
                 else:
                     if len(lounge)<CONFIG["lounge_cap"]:
                         pat,rng=rng_int(rng,15,30)
                         lounge.append(LoungeSlot(cl,t,pat))
-                        logs.append(Log(t,f"🛋️ {cl.name} → лаунж (ждёт {cl.pref})","activity"))
+                        logs.append(Log(t,f"{cl.name} → лаунж-зона (ждёт {cl.pref})","activity"))
                         last=f"{cl.name} в лаунж"
                     else:
-                        logs.append(Log(t,f"❌ {cl.name} ушёл — лаунж полон","leave"))
+                        logs.append(Log(t,f"{cl.name} ушёл — лаунж-зона забита","leave"))
                         last=f"{cl.name} ушёл"
             admin=AdminState("idle",0,None,None)
 
@@ -684,7 +670,6 @@ def tick_behavior(st):
         live_tm=max(0,ses.live_timer-1)
         chat_st=ses.chat_state; pending=ses.pending_order_id; end=ses.end; fixed=ses.fixed_price
 
-        # ПК-чат использует символьные сообщения из chat_emotions.txt
         if ses.seat_type=="pc" and chat_tm==0:
             partners=[p for p in pc_by_game.get(ses.game.name,[]) if p!=ses.id]
             talk,rng=rng_chance(rng,0.6 if partners else 0.15)
@@ -702,7 +687,6 @@ def tick_behavior(st):
                     chats.append(ChatMsg(t,ses.client_name,msg,ses.seat_id,"pc_chat"))
                     chat_st="idle"
             else:
-                # Символьные сообщения (эмодзи/ASCII-арт) из chat_emotions.txt
                 emo,rng=rng_chance(rng,0.25)
                 if emo and ph["chat_emotions"]:
                     msg,rng=rng_pick(rng,ph["chat_emotions"])
@@ -720,16 +704,16 @@ def tick_behavior(st):
                     chats.append(ChatMsg(t,ses.client_name,msg,ses.seat_id,"live_chat"))
             live_tm=2
 
-        # ── Туалет ───────────────────────────────────────────────
+        # Туалет
         go_bath, rng = rng_chance(rng, 0.008)
         if go_bath and not any(bc.session_id == ses.id for bc in new_bath):
             btm, rng = rng_int(rng, 2, 5)
             new_end = min(end + btm, CONFIG["close"])
             new_bath.append(BathroomClient(ses.id, ses.client_name, ses.appearance, btm))
             end = new_end
-            logs.append(Log(t, f"🚻 {ses.client_name} → туалет", "activity"))
+            logs.append(Log(t, f"{ses.client_name} → туалет", "activity"))
 
-        # Триггеры (еда и продление) — не в последний час
+        # Триггеры (еда и продление)
         if trig_cd==0 and not too_close and not any(bc.session_id==ses.id for bc in new_bath):
             fire,rng=rng_chance(rng,0.35)
             if fire:
@@ -748,8 +732,8 @@ def tick_behavior(st):
                         pending=next_o; next_o+=1; trig_cd=300
                 elif (not want_food and t >= ses.end
                       and TARIFFS[ses.seat_type][ses.tariff].get("duration") is not None):
-                    # Продление — только если осталось более 90 минут до закрытия
-                    if t < CONFIG["close"] - 90:
+                    # Продление — только если осталось более 180 минут до закрытия
+                    if t < CONFIG["close"] - 180:
                         valid = get_valid_tariffs(ses.seat_type, t, CONFIG["close"])
                         valid = [k for k in valid if (TARIFFS[ses.seat_type][k].get("duration") or 60) >= 30]
                         if valid:
@@ -762,10 +746,10 @@ def tick_behavior(st):
                                 msg = tpl.format(seat_id=ses.seat_id, seat_type=ses.seat_type, tariff=tf2["name"])
                                 chats.append(ChatMsg(t, ses.client_name, msg, ses.seat_id, "trigger_extend"))
                                 end += dur; fixed += extra
-                                logs.append(Log(t, f"⏰ {ses.client_name} продлил +{dur}мин (+{fmt_money(extra)})", "extension"))
+                                logs.append(Log(t, f"{ses.client_name} продлил +{dur}мин (+{fmt_money(extra)})", "extension"))
                                 last = f"{ses.client_name} продлил сессию"; trig_cd = 300
 
-        # ── Уход (естественный конец или поминутный leave_at) ───────────
+        # Уход (естественный конец или поминутный leave_at)
         leave = False
         tf = TARIFFS[ses.seat_type][ses.tariff]
         if tf.get("duration") is None:
@@ -789,7 +773,7 @@ def tick_behavior(st):
             price = max(0.0, price)
             rev+=price; served+=1; seats=_seat_dec(seats,ses.seat_id)
             tag=" (досрочно)" if (t<end and tf.get("duration") is not None) else ""
-            logs.append(Log(t,f"💰 {ses.client_name} ушёл{tag}. Оплата {fmt_money(price)}","departure"))
+            logs.append(Log(t,f"{ses.client_name} ушёл{tag}. Оплата {fmt_money(price)}","departure"))
             last=f"{ses.client_name} ушёл — {fmt_money(price)}"; continue
 
         kept.append(ses._replace(end=end,fixed_price=fixed,food_cooldown=food_cd,trigger_cooldown=trig_cd,chat_timer=chat_tm,live_timer=live_tm,chat_state=chat_st,pending_order_id=pending))
@@ -807,7 +791,7 @@ def tick_staff(st):
                 if o.status=="pending":
                     orders[j]=o._replace(status="preparing",worker_id=w.id)
                     workers[i]=w._replace(status="delivering",timer=o.food.prep_time,order_id=o.id)
-                    logs.append(Log(t,f"🛎️ {w.name} готовит #{o.id}: {o.food.name}","activity"))
+                    logs.append(Log(t,f"{w.name} готовит #{o.id}: {o.food.name}","activity"))
                     last=f"{w.name} готовит {o.food.name}"; break
 
         elif w.status=="delivering":
@@ -822,9 +806,8 @@ def tick_staff(st):
                         target_seat=sessions[si].seat_id
                         cd,rng=rng_int(rng,180,240)
                         sessions[si]=sessions[si]._replace(pending_order_id=None,food_cooldown=cd)
-                    logs.append(Log(t,f"✅ {w.name} доставил {o.food.name} (+{fmt_money(o.food.price)})","food"))
+                    logs.append(Log(t,f"{w.name} доставил {o.food.name} (+{fmt_money(o.food.price)})","food"))
                     last=f"{w.name} доставил {o.food.name}"
-                # Работник остаётся у клиента (~8 тиков) — видно на визуализации
                 workers[i]=w._replace(status="serving",timer=8,order_id=None,target_seat_id=target_seat)
             else:
                 workers[i]=w._replace(timer=ntm)
@@ -848,7 +831,7 @@ def pipeline(*fns):
     return run
 
 def _close_all_sessions(state):
-    """Принудительно завершает оставшиеся сессии (вызывается как страховка при закрытии)."""
+    """Принудительно завершает оставшиеся сессии (вызывается как страховка при закрытии)"""
     t = state.time; rev = state.revenue; served = state.served
     seats = state.seats; logs = list(state.logs)
     for ses in state.sessions:
@@ -858,17 +841,17 @@ def _close_all_sessions(state):
         else:
             price = max(0.0, ses.fixed_price)
         rev += price; served += 1; seats = _seat_dec(seats, ses.seat_id)
-        logs.append(Log(t, f"💰 {ses.client_name} ушёл. Оплата {fmt_money(price)}", "departure"))
+        logs.append(Log(t, f"{ses.client_name} ушёл. Оплата {fmt_money(price)}", "departure"))
     return state._replace(sessions=(), seats=seats, revenue=rev, served=served,
                           logs=tuple(logs), queue=(), lounge=(), bathroom_clients=(),
                           entrance=())
 
 def _do_close(state, t):
-    """Финансовый итог дня и переход в состояние «закрыто»."""
+    """Финансовый итог дня и переход в состояние «закрыто»"""
     total_exp=(CONFIG["rent"]+CONFIG["electric"]+CONFIG["wage_admin"]+
                2*CONFIG["wage_worker"]+state.expenses+state.food_stock.purchase_cost)
     profit=state.revenue+state.food_revenue-total_exp
-    close_log=Log(t,f"🔒 ЗАКРЫТО! Выручка: {fmt_money(state.revenue+state.food_revenue)} Расходы: {fmt_money(total_exp)} Прибыль: {fmt_money(profit)}","system")
+    close_log=Log(t,f"ЗАКРЫТО. Выручка: {fmt_money(state.revenue+state.food_revenue)} Расходы: {fmt_money(total_exp)} Прибыль: {fmt_money(profit)}","system")
     return state._replace(
         running=False, paused=False,
         queue=(), lounge=(), bathroom_clients=(), entrance=(),
@@ -881,13 +864,11 @@ def tick(state):
     t=state.time
     if t<CONFIG["open"]: return state._replace(time=t+1)
 
-    # Пайплайн: tick_entrance первым — клиенты 2 тика видны на панели «Вход»
     pipe=pipeline(tick_entrance,tick_arrivals,tick_lounge,tick_admin,tick_behavior,tick_staff,tick_queue)
     st=pipe(state)
     st=st._replace(time=t+1,logs=st.logs[-400:],chats=st.chats[-200:])
 
     # Закрытие: клиенты уходят естественным образом через tick_behavior
-    # (сессии зажаты до close, поэтому все уйдут сами при t >= close)
     if t >= CONFIG["close"] and not st.sessions:
         return _do_close(st, t+1)
 
@@ -912,9 +893,7 @@ def next_day(state):
         last_action=f"День {nd} начинается!",
     )
 
-# ═══════════════════════════════════════════════════════════════
-# L2b — КОМАНДЫ и СЕРИАЛИЗАЦИЯ  (чистые функции)
-# ═══════════════════════════════════════════════════════════════
+# Команды и сериализация
 
 def cmd_start(state):
     if state.running: return state
@@ -944,7 +923,6 @@ COMMAND_HANDLERS = {
 VALID_ACTIONS = frozenset(COMMAND_HANDLERS.keys()) | {"speed"}
 
 def apply_command(state, action):
-    """Чистая функция: применяет команду пользователя к состоянию."""
     if not isinstance(action, dict):
         return state
     act = action.get("action")
@@ -953,7 +931,7 @@ def apply_command(state, action):
     handler = COMMAND_HANDLERS.get(act)
     return handler(state) if handler else state
 
-# ── Сериализация ──────────────────────────────────────────────────
+# Сериализация
 def _nt_to_dict(obj):
     if isinstance(obj, tuple) and hasattr(obj, "_asdict"):
         return {k: _nt_to_dict(v) for k, v in obj._asdict().items()}
@@ -964,7 +942,7 @@ def _nt_to_dict(obj):
     return obj
 
 def world_to_dict(state, log_tail=200, chat_tail=150):
-    """Сериализует состояние в JSON-совместимый словарь."""
+    """Сериализует состояние в JSON-совместимый словарь"""
     trimmed = state._replace(
         logs=state.logs[-log_tail:],
         chats=state.chats[-chat_tail:],
@@ -976,14 +954,14 @@ def world_to_dict(state, log_tail=200, chat_tail=150):
     hour = (state.time // 60) % 24
     d["clock"] = f"{hour:02d}:{state.time % 60:02d}"
     d["config"] = {
-        "open":        CONFIG["open"],
-        "close":       CONFIG["close"],
-        "pc":          CONFIG["pc"],
-        "vip":         CONFIG["vip"],
-        "console":     CONFIG["console"],
-        "pc_rows":     CONFIG["pc_rows"],
-        "pc_cols":     CONFIG["pc_cols"],
-        "lounge_cap":  CONFIG["lounge_cap"],
+        "open": CONFIG["open"],
+        "close": CONFIG["close"],
+        "pc": CONFIG["pc"],
+        "vip": CONFIG["vip"],
+        "console": CONFIG["console"],
+        "pc_rows": CONFIG["pc_rows"],
+        "pc_cols": CONFIG["pc_cols"],
+        "lounge_cap": CONFIG["lounge_cap"],
     }
     d["promotions_active"] = [p["name"] for p in active_promotions(state)]
     return d

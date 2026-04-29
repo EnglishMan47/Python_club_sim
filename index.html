@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CYBER ZONE — Симуляция</title>
+  <title>CYBER ZONE — Симуляция компьютерного клуба</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -45,15 +45,14 @@
   </div>
 </div>
 <script type="module">
-/* ═══════════════════════════════════════════════════════════════
+/* 
    CYBER ZONE — JS L3 Shell
    Pure projection: server state → DOM + SVG
-   No business logic — only network, rendering, button intents.
-   ═══════════════════════════════════════════════════════════════ */
+ */
 
 let state = null, currentTab = "log", ws = null, rt = null;
 
-// ── WebSocket ──────────────────────────────────────────────────
+// WebSocket
 function connect() {
   const h = location.host || "127.0.0.1:8000";
   ws = new WebSocket(`ws://${h}/ws`);
@@ -66,7 +65,7 @@ function setConn(t,c) { const e=document.getElementById("conn"); e.textContent="
 function send(o) { if(ws?.readyState===1) ws.send(JSON.stringify(o)); }
 connect();
 
-// ── Buttons ────────────────────────────────────────────────────
+// Buttons 
 document.getElementById("btn-start").onclick    = () => send({action:"start"});
 document.getElementById("btn-pause").onclick    = () => send({action:"pause"});
 document.getElementById("btn-reset").onclick    = () => send({action:"reset"});
@@ -79,9 +78,9 @@ document.querySelectorAll("#tabs .tab").forEach(el => {
   };
 });
 
-// ═══════════════════════════════════════════════════════════════
+// 
 //  HELPERS
-// ═══════════════════════════════════════════════════════════════
+// 
 const fmt   = m => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
 const money = n => `${Math.round(n)}₽`;
 const DAYS  = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
@@ -90,9 +89,23 @@ const TNAMES= {min:"Поминутный","1h":"1 Час","2h":"2 Часа","3h"
 const NPAL  = ["#F87171","#FB923C","#FCD34D","#A3E635","#34D399","#22D3EE","#60A5FA","#A78BFA","#F472B6","#5EEAD4","#FDE68A","#C4B5FD"];
 function nCol(n){ let h=0; for(let i=0;i<n.length;i++) h=(h*31+n.charCodeAt(i))|0; return NPAL[Math.abs(h)%NPAL.length]; }
 
-// ═══════════════════════════════════════════════════════════════
-//  TOP BAR
-// ═══════════════════════════════════════════════════════════════
+// Форматирование "Имя Ф."
+function formatName(fullName) {
+  if (!fullName) return "";
+  const parts = fullName.split(" ");
+  if (parts.length > 1) return `${parts[0]} ${parts[1][0]}.`;
+  return parts[0];
+}
+
+// Сокращение названий еды для облачка с сообщением
+function shortFood(foodName) {
+  if (!foodName) return "";
+  if (foodName.includes("Бургер")) return "Бургер";
+  if (foodName.includes("Шоколадный")) return "Батончик";
+  return foodName.slice(0, 12);
+}
+
+// Верхняя панель
 function renderTop(s){
   document.getElementById("clock").textContent=s.clock;
   document.getElementById("day").textContent=`День ${s.day} (${DAYS[s.weekday]})`;
@@ -108,9 +121,7 @@ function renderTop(s){
   sc.querySelectorAll(".speed").forEach(b=>b.classList.toggle("active",+b.dataset.speed===s.speed));
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  SIDEBAR
-// ═══════════════════════════════════════════════════════════════
+// Боковая панель
 const R=(l,v,c)=>`<div class="stat-row"><span class="lbl">${l}</span><span class="val" style="color:${c}">${v}</span></div>`;
 
 function renderStats(s){
@@ -144,7 +155,6 @@ function renderStats(s){
     {n:"КОНС",tot:s.config.console,bs:conOcc,c:"var(--con)"},
   ].map(z=>`<div class="zone-bar"><span class="zname" style="color:${z.c}">${z.n}</span><div class="track"><div class="fill" style="width:${z.tot?z.bs/z.tot*100:0}%;background:${z.c}"></div></div><span class="ratio">${z.bs}/${z.tot}</span></div>`).join("");
 
-  // Staff — admin name from server state, not hardcoded
   const adminName = s.admin_name || "Админ";
   const adminShort = adminName.split(" ")[0];
   const as={idle:"ожидает",processing:"обрабатывает",seating_lounge:"обслуж. лаунж"}[s.admin.status]||"";
@@ -176,15 +186,12 @@ function renderStatus(s){
   el.innerHTML=h;
 }
 
-// ═══════════════════════════════════════════════════════════════
 //  SVG HELPERS
-// ═══════════════════════════════════════════════════════════════
 const NS="http://www.w3.org/2000/svg";
 function E(tag,a={}){const e=document.createElementNS(NS,tag);for(const[k,v]of Object.entries(a))e.setAttribute(k,v);return e;}
 function T(p,x,y,s,a={}){const t=E("text",{x,y,...a});t.textContent=s;p.appendChild(t);return t;}
 const F="Consolas,monospace";
 
-// Person sprite: feet at (cx,cy). sc=1.0 ≈ 20px tall
 function drawPerson(p,cx,cy,app,sc=1.2){
   if(!app)return;
   const w=9*sc,h=19*sc;
@@ -228,9 +235,7 @@ function drawSeat(p,mx,my,stroke,label,occupied){
   T(p,mx,my+31,label,{"text-anchor":"middle","font-size":9,"font-family":F,fill:occupied?"#5a5a8a":"#2a2a4a"});
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  MAIN SCENE
-// ═══════════════════════════════════════════════════════════════
+// Основная зона
 function renderScene(s){
   const sc=document.getElementById("scene");sc.innerHTML="";
   const W=1600,H=860,FH=130,fy=H-FH;
@@ -275,18 +280,22 @@ function renderScene(s){
       drawSeat(sc,mx,my,C,seat.id,list.length>0);
       list.slice(0,seat.capacity).forEach((ses,i)=>{
         const px=(seat.capacity===1||list.length===1)?mx:mx-14+i*28;
-        const py=my-22;
+        const py=my-22; // Координата ног
         drawPerson(sc,px,py,ses.appearance,1.2);
+        
+        // Имя клиента над головой
+        T(sc, px, py-26, formatName(ses.client_name), {"text-anchor":"middle","font-size":8,"font-family":F,fill:"#ccc"});
+
         const ord=ordBySes[ses.id];
         if(ord&&["pending","preparing"].includes(ord.status))
-          drawBubble(sc,px,py-26,(ord.food?.name||"").slice(0,12),"#FB923C");
+          drawBubble(sc,px,py-38,shortFood(ord.food?.name),"#FB923C");
         else if(extSeats.has(ses.seat_id))
-          drawBubble(sc,px,py-26,"Продление","#FBBF24");
+          drawBubble(sc,px,py-38,"Продление","#FBBF24");
       });
     });
   }
 
-  // ── Floor rooms ─────────────────────────────────────────────
+  // Комнаты
   const ROOMS=[
     {x1:0,x2:W*0.10,fill:"#0a0a28",brd:"#1a1a48",label:"Туалет"},
     {x1:W*0.105,x2:W*0.285,fill:"#150b03",brd:"#381805",label:"Бар"},
@@ -299,24 +308,27 @@ function renderScene(s){
     T(sc,(r.x1+r.x2)/2,fy+16,r.label,{"text-anchor":"middle","font-size":12,"font-weight":"700","font-family":F,fill:"#666"});
   }
 
-  // ── Туалет ──────────────────────────────────────────────────
+  // Туалет
   (s.bathroom_clients||[]).slice(0,4).forEach((bc,i)=>{
     const bx=W*0.025+(i%2)*42,by=fy+55+Math.floor(i/2)*42;
     drawPerson(sc,bx,by,bc.appearance,1.0);
+    T(sc, bx, by-22, formatName(bc.client_name), {"text-anchor":"middle","font-size":8,"font-family":F,fill:"#ccc"});
     T(sc,bx,by+14,`${bc.timer}м`,{"text-anchor":"middle","font-size":9,"font-family":F,fill:"#555"});
   });
 
-  // ── Лаунж ───────────────────────────────────────────────────
+  // Лаунж-зона
   s.lounge.slice(0,s.config.lounge_cap).forEach((lc,i)=>{
     const lx=W*0.305+(i%5)*48,ly=fy+52+Math.floor(i/5)*48;
     drawPerson(sc,lx,ly,lc.client.appearance,1.05);
+    T(sc, lx, ly-22, formatName(lc.client.name), {"text-anchor":"middle","font-size":8,"font-family":F,fill:"#ccc"});
+    
     const f=Math.max(0,lc.patience/30);
     const c=lc.patience>15?"#4ADE80":lc.patience>7?"#FBBF24":"#EF4444";
     sc.appendChild(E("rect",{x:lx-12,y:ly+12,width:24,height:3,fill:"#1a1a3a",rx:1}));
     sc.appendChild(E("rect",{x:lx-12,y:ly+12,width:24*f,height:3,fill:c,rx:1}));
   });
 
-  // ── Администратор (dynamic name & appearance from server) ───
+  // Администратор
   const AX=W*0.675,AY=fy+76;
   const admName=s.admin_name||"Админ";
   const admApp=s.admin_appearance||{skin:"#F1C27D",shirt:"#1d4ed8",hair:"#2C1810",glasses:true,hair_style:0};
@@ -326,23 +338,37 @@ function renderScene(s){
   drawPerson(sc,AX,AY,admApp,1.3);
   T(sc,AX,AY+28,admName.split(" ")[0],{"text-anchor":"middle","font-size":10,"font-weight":"700","font-family":F,fill:admC});
 
-  // Clients being processed by admin — shown NEXT to admin desk, not in Вход
   if(["processing","seating_lounge"].includes(s.admin.status)&&s.admin.target){
     const members=s.admin.group_members?.length?s.admin.group_members:[s.admin.target];
-    members.slice(0,4).forEach((m,j)=>drawPerson(sc,AX+46+j*26,AY,m.appearance,1.05));
+    members.slice(0,4).forEach((m,j)=>{
+      const cx = AX+46+j*26;
+      drawPerson(sc,cx,AY,m.appearance,1.05);
+      T(sc, cx, AY-22, formatName(m.name), {"text-anchor":"middle","font-size":8,"font-family":F,fill:"#ccc"});
+    });
   }
 
-  // ── Работники зала ──────────────────────────────────────────
+  // Работники зала
   s.hall_workers.forEach((w,i)=>{
-    let wx=W*0.16+i*58,wy=fy+76;  // по умолчанию: в Баре
-    if(w.status==="delivering"&&w.order_id!=null){
-      // Во время доставки — у места клиента
+    let wx=W*0.16+i*58, wy=fy+76;
+    
+    if(w.status==="delivering" && w.order_id!=null){
       const ord=s.order_queue.find(o=>o.id===w.order_id);
-      if(ord){const ses=s.sessions.find(x=>x.id===ord.session_id);if(ses&&seatXY[ses.seat_id]){[wx,wy]=seatXY[ses.seat_id];wy+=60;}}
-    } else if(w.status==="serving"&&w.target_seat_id){
-      // После доставки работник остаётся у клиента (~8 тиков) — видно на визуализации
-      if(seatXY[w.target_seat_id]){[wx,wy]=seatXY[w.target_seat_id];wy+=60;}
+      if(ord){
+        const ses=s.sessions.find(x=>x.id===ord.session_id);
+        if(ses && seatXY[ses.seat_id]){
+          [wx,wy] = seatXY[ses.seat_id];
+          wx += 60;
+          wy -= 10;
+        }
+      }
+    } else if(w.status==="serving" && w.target_seat_id){
+      if(seatXY[w.target_seat_id]){
+        [wx,wy] = seatXY[w.target_seat_id];
+        wx += 60; 
+        wy -= 10;
+      }
     }
+    
     const wc=w.status==="idle"?"#4ADE80":w.status==="serving"?"#22D3EE":"#FB923C";
     sc.appendChild(E("rect",{x:wx-28,y:wy-46,width:56,height:52,fill:"rgba(10,10,30,0.75)",stroke:wc,"stroke-width":1,rx:5}));
     drawPerson(sc,wx,wy,w.appearance,1.2);
@@ -351,42 +377,36 @@ function renderScene(s){
     if(w.status==="serving")T(sc,wx+28,wy-38,"[обсл]",{"text-anchor":"middle","font-size":9,"font-weight":"bold","font-family":F,fill:"#22D3EE"});
   });
 
-  // ── Вход — сначала клиенты на панели «Вход», затем очередь к администратору ────
+  // Вход — сначала клиенты на панели «Вход», затем очередь к администратору
   const QX=W*0.762,QY=fy+42;
-  // entrance: клиенты только что вошли (2 тика видны здесь до перехода в очередь)
   const entranceClients=(s.entrance||[]).map(e=>e.client);
-  // queue: ждут у администратора (отображаются тут до момента обработки)
-  const allAtDoor=[...entranceClients,...s.queue];
-  if(allAtDoor.length){
-    const entrLabel=entranceClients.length?`Вход: ${entranceClients.length}  `:""
-    const qLabel=s.queue.length?`Очередь: ${s.queue.length}`:""
-    T(sc,QX,QY-12,entrLabel+qLabel,{"font-size":11,"font-weight":"700","font-family":F,fill:"#F472B6"});
-  }
-  // Клиенты в очереди отображаются с чуть другим оттенком чтобы отличить от «Вход»
+  
   entranceClients.slice(0,8).forEach((cl,i)=>{
     const ex=QX+(i%4)*44, ey=QY+Math.floor(i/4)*44;
-    // Мигающий круг — «только что вошли»
-    sc.appendChild(E("circle",{cx:ex,cy:ey-28,r:14,fill:"none",stroke:"#22D3EE","stroke-width":1.5,opacity:0.7}));
+    // Круг теперь центрирован по груди персонажа (ey - 10)
+    sc.appendChild(E("circle",{cx:ex,cy:ey-10,r:16,fill:"none",stroke:"#22D3EE","stroke-width":1.5,opacity:0.7}));
     drawPerson(sc,ex,ey,cl.appearance,1.05);
+    T(sc, ex, ey-22, formatName(cl.name), {"text-anchor":"middle","font-size":8,"font-family":F,fill:"#ccc"});
   });
+  
   const qOffset=Math.min(entranceClients.length,8);
   s.queue.slice(0,16-qOffset).forEach((cl,i)=>{
     const qi=i+qOffset;
-    drawPerson(sc,QX+(qi%4)*44,QY+Math.floor(qi/4)*44,cl.appearance,1.05);
+    const qx = QX+(qi%4)*44, qy = QY+Math.floor(qi/4)*44;
+    drawPerson(sc,qx,qy,cl.appearance,1.05);
+    T(sc, qx, qy-22, formatName(cl.name), {"text-anchor":"middle","font-size":8,"font-family":F,fill:"#ccc"});
   });
+  
+  const allAtDoor=[...entranceClients,...s.queue];
   if(allAtDoor.length>16)
     T(sc,QX+180,QY+40,`+${allAtDoor.length-16}`,{"font-size":11,"font-family":F,fill:"#888"});
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  TEXT PANE — с умной прокруткой: пользователь может листать
-//  историю, не теряя позицию при новых сообщениях
-// ═══════════════════════════════════════════════════════════════
+//  TEXT PANE
 function renderTextPane(s){
   const el=document.getElementById("textpane");
-  // Запоминаем позицию ДО обновления контента
   const distFromBottom=el.scrollHeight-el.scrollTop-el.clientHeight;
-  const wasNearBottom=distFromBottom<60;   // порог: 60px от низа = «у дна»
+  const wasNearBottom=distFromBottom<60;
 
   if(currentTab==="log"){
     el.innerHTML=s.logs.map(l=>`<span class="ts">[${fmt(l.time)}]</span> <span class="${l.type}">${esc(l.text)}</span>`).join("\n");
@@ -402,16 +422,8 @@ function renderTextPane(s){
     }</tbody></table>`;
   }
 
-  // Автопрокрутка: только если пользователь был «у дна».
-  // Если он листал вверх — не трогаем его позицию.
-  if(wasNearBottom){
-    el.scrollTop=el.scrollHeight;
-  }
-  // Иначе: браузер сам восстановит примерную позицию после innerHTML,
-  // либо мы можем сохранить смещение от низа:
-  else{
-    el.scrollTop=Math.max(0,el.scrollHeight-el.clientHeight-distFromBottom);
-  }
+  if(wasNearBottom) el.scrollTop=el.scrollHeight;
+  else el.scrollTop=Math.max(0,el.scrollHeight-el.clientHeight-distFromBottom);
 }
 
 function renderAll(s){renderTop(s);renderStats(s);renderStatus(s);renderScene(s);renderTextPane(s);}

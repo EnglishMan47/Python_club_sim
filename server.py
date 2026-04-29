@@ -1,12 +1,5 @@
 """
-CYBER ZONE — Server  (Python L3)
-
-Единственное место с побочными эффектами: сеть, таймер, статические файлы.
-Бизнес-логика — в core.py (100 % чистые функции).
-
-Запуск:
-    pip install fastapi uvicorn
-    python server.py
+L3 - Сервер
 """
 
 from __future__ import annotations
@@ -26,10 +19,7 @@ import uvicorn
 
 import core
 
-
-# ─────────────────────────────────────────────────────────────────
 # Логирование в файл
-# ─────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent
 LOG_FILE = ROOT / "simulation.log"
 
@@ -43,14 +33,10 @@ _file_handler.setLevel(logging.DEBUG)
 logger = logging.getLogger("cyberzone")
 logger.setLevel(logging.DEBUG)
 logger.addHandler(_file_handler)
-# Не дублируем в консоль uvicorn (только в файл)
 logger.propagate = False
 
-
-# ─────────────────────────────────────────────────────────────────
-# Изменяемое состояние мира — только здесь, на L3.
-# Core видит эти значения как аргументы чистых функций.
-# ─────────────────────────────────────────────────────────────────
+# Изменяемое состояние мира — только здесь, на L3
+# Core видит эти значения как аргументы чистых функций
 STATE: core.World = core.initial_state(seed=42)
 SPEED: int        = 1
 SPEED_OPTIONS     = (1, 2, 5, 10, 20, 60)
@@ -60,10 +46,7 @@ WEB = ROOT
 
 logger.info("CYBER ZONE сервер инициализирован. Log: %s", LOG_FILE)
 
-
-# ─────────────────────────────────────────────────────────────────
 # Валидация входящих сообщений
-# ─────────────────────────────────────────────────────────────────
 def _validate_command(msg: object) -> tuple[bool, str]:
     """Возвращает (ok, reason). Проверяет структуру команды перед применением."""
     if not isinstance(msg, dict):
@@ -83,10 +66,7 @@ def _validate_command(msg: object) -> tuple[bool, str]:
             return False, f"недопустимая скорость {value}, допустимые: {SPEED_OPTIONS}"
     return True, ""
 
-
-# ─────────────────────────────────────────────────────────────────
 # Жизненный цикл приложения — симуляционный цикл как фоновая задача
-# ─────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("FastAPI lifespan: запуск симуляционного цикла")
@@ -114,9 +94,7 @@ async def stylesheet():
     return FileResponse(WEB / "style.css", media_type="text/css")
 
 
-# ─────────────────────────────────────────────────────────────────
 # WebSocket
-# ─────────────────────────────────────────────────────────────────
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
@@ -156,10 +134,7 @@ def _parse_message(text: str, client_id: int) -> dict | None:
         logger.warning("WS client#%d: невалидный JSON — %s | raw=%r", client_id, exc, text[:200])
         return None
 
-
-# ─────────────────────────────────────────────────────────────────
-# Обработка команд (L3 → L2 мост)
-# ─────────────────────────────────────────────────────────────────
+# Обработка команд
 def _handle_command(msg: dict) -> None:
     """Применяет команду пользователя. Единственное место мутации STATE."""
     global STATE, SPEED
@@ -188,9 +163,7 @@ def _handle_command(msg: dict) -> None:
             logger.info("Новый день: %d", STATE.day)
 
 
-# ─────────────────────────────────────────────────────────────────
 # Симуляционный цикл — каждую итерацию = 1 минута симуляции
-# ─────────────────────────────────────────────────────────────────
 async def _simulation_loop() -> None:
     global STATE
     prev_running = False
@@ -218,9 +191,6 @@ async def _simulation_loop() -> None:
         prev_running = STATE.running
 
 
-# ─────────────────────────────────────────────────────────────────
-# Broadcast helpers
-# ─────────────────────────────────────────────────────────────────
 def _snapshot_payload() -> str:
     d = core.world_to_dict(STATE, log_tail=200, chat_tail=150)
     d["speed"]         = SPEED
@@ -244,6 +214,5 @@ async def _broadcast(data: str) -> None:
     )
 
 
-# ─────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")

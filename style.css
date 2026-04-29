@@ -1,9 +1,4 @@
-/* ═══════════════════════════════════════════════════════════════
-   CYBER ZONE — style.css
-   Base reset + design system + layout + components
-   ═══════════════════════════════════════════════════════════════ */
-
-/* ── 1. Base reset ─────────────────────────────────────────────── */
+/* Базовый сброс стилей */
 *,
 *::before,
 *::after {
@@ -48,9 +43,9 @@ textarea {
   border: none;
 }
 
-/* ── 2. Design tokens ──────────────────────────────────────────── */
+/* Дизайн-токены (Глобальные переменные) */
 :root {
-  /* colours */
+  /* Базовые цвета (Фоны и панели) */
   --bg:         #07071a;
   --bg-2:       #0b0b1e;
   --bg-3:       #0f0f26;
@@ -64,7 +59,7 @@ textarea {
   --dim:        #4a4a6a;
   --dim-2:      #6a6a8a;
 
-  /* accents */
+  /* Акцентные цвета */
   --accent:     #818CF8;
   --accent-2:   #a5b4fc;
   --pc:         #3B82F6;
@@ -84,14 +79,14 @@ textarea {
   --cyan:       #22D3EE;
   --purple:     #A78BFA;
 
-  /* spacing */
+  /* Отступы и скругления */
   --gap:        5px;
   --pad:        8px;
   --pad-lg:     14px;
   --radius:     4px;
   --radius-lg:  8px;
 
-  /* typography */
+  /* Размеры шрифтов */
   --font-xs:    11px;
   --font-sm:    12px;
   --font-md:    14px;
@@ -99,18 +94,18 @@ textarea {
   --font-xl:    26px;
   --font-2xl:   32px;
 
-  /* animation */
+  /* Анимации и переходы */
   --trans:      0.12s ease;
   --trans-slow: 0.3s ease;
 }
 
-/* ── 3. Scrollbars ─────────────────────────────────────────────── */
+/* Полосы прокрутки */
 ::-webkit-scrollbar              { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track        { background: transparent; }
 ::-webkit-scrollbar-thumb        { background: var(--border-2); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover  { background: var(--dim); }
 
-/* ── 4. App grid ───────────────────────────────────────────────── */
+/* Главная сетка приложения */
 #app {
   display: grid;
   grid-template-rows: 58px 5px 1fr;
@@ -125,7 +120,7 @@ textarea {
   background: var(--bg);
 }
 
-/* ── 5. Top bar ────────────────────────────────────────────────── */
+/* Верхняя панель */
 #topbar {
   grid-area: top;
   background: var(--panel);
@@ -177,7 +172,7 @@ textarea {
   gap: 2px;
 }
 
-/* ── 6. Buttons ────────────────────────────────────────────────── */
+/* Кнопки */
 .btn {
   background: var(--panel-2);
   color: var(--dim-2);
@@ -194,7 +189,7 @@ textarea {
   border-color: var(--border-2);
 }
 
-/* Speed buttons */
+/* Кнопки управления скоростью */
 button.speed {
   background: var(--panel-2);
   color: var(--dim);
@@ -214,7 +209,7 @@ button.speed.active   {
   box-shadow: 0 0 10px rgba(99,102,241,0.4);
 }
 
-/* Action buttons */
+/* Кнопки действий */
 button.start {
   background: #166534;
   color: var(--ok);
@@ -284,7 +279,7 @@ button.next-day {
 }
 button.next-day:hover { background: #5a3c08; }
 
-/* ── 7. Day progress bar ───────────────────────────────────────── */
+/* Индикатор прогресса дня */
 #progress {
   grid-area: bar;
   background: var(--panel-2);
@@ -301,7 +296,7 @@ button.next-day:hover { background: #5a3c08; }
   transition: width var(--trans-slow);
 }
 
-/* ── 8. Main area ──────────────────────────────────────────────── */
+/* Основная рабочая область */
 #main {
   grid-area: main;
   display: flex;
@@ -325,7 +320,7 @@ button.next-day:hover { background: #5a3c08; }
   height: 100%;
 }
 
-/* Connection status badge */
+/* Статус соединения (WebSockets) */
 .connect-status {
   position: absolute;
   top: 8px;
@@ -356,7 +351,7 @@ button.next-day:hover { background: #5a3c08; }
   50%       { opacity: 0.5; }
 }
 
-/* ── 9. Bottom panel ───────────────────────────────────────────── */
+/* Нижняя панель */
 #bottom {
   height: 220px;
   display: flex;
@@ -367,7 +362,7 @@ button.next-day:hover { background: #5a3c08; }
   overflow: hidden;
 }
 
-/* Tabs */
+/* Вкладки */
 #tabs {
   display: flex;
   background: var(--bg-3);
@@ -397,7 +392,7 @@ button.next-day:hover { background: #5a3c08; }
   border-bottom: 2px solid var(--accent);
 }
 
-/* Text pane */
+/* Текстовая панель (область вывода) */
 #textpane {
   flex: 1;
   overflow-y: auto;
@@ -408,7 +403,7 @@ button.next-day:hover { background: #5a3c08; }
   word-break: break-word;
 }
 
-/* Log type colours */
+/* Логи */
 #textpane .ts              { color: var(--dim); }
 #textpane .system          { color: var(--err); font-weight: 600; }
 #textpane .arrival         { color: #4ade80; }
@@ -424,7 +419,7 @@ button.next-day:hover { background: #5a3c08; }
 #textpane .trigger_food    { color: var(--orange); }
 #textpane .trigger_extend  { color: var(--warn); }
 
-/* Sessions table */
+/* Таблица сессий */
 #textpane table {
   font-size: var(--font-xs);
   border-collapse: collapse;
@@ -450,7 +445,7 @@ button.next-day:hover { background: #5a3c08; }
 }
 #textpane tr:hover td { background: rgba(59,130,246,0.05); }
 
-/* ── 10. Sidebar ───────────────────────────────────────────────── */
+/* Боковая панель */
 #sidebar {
   grid-area: side;
   background: var(--panel);
@@ -464,7 +459,7 @@ button.next-day:hover { background: #5a3c08; }
   min-height: 0;
 }
 
-/* Section headers */
+/* Заголовки секций */
 .side-hdr {
   color: var(--accent);
   font-size: var(--font-xs);
@@ -477,7 +472,7 @@ button.next-day:hover { background: #5a3c08; }
   opacity: 0.9;
 }
 
-/* Stat rows */
+/* Строки статистики */
 .stat-row {
   display: flex;
   justify-content: space-between;
@@ -493,7 +488,7 @@ button.next-day:hover { background: #5a3c08; }
 .stat-row .lbl  { color: var(--dim-2); font-size: var(--font-xs); }
 .stat-row .val  { font-weight: 700; font-size: var(--font-sm); }
 
-/* Zone bars */
+/* Индикаторы зон (заполненность ПК/ВИП/Консолей) */
 .zone-bar {
   display: flex;
   align-items: center;
@@ -530,7 +525,7 @@ button.next-day:hover { background: #5a3c08; }
   white-space: nowrap;
 }
 
-/* Staff list */
+/* Персонал */
 #staff .staff-row {
   font-size: var(--font-xs);
   color: var(--ink-2);
@@ -541,7 +536,7 @@ button.next-day:hover { background: #5a3c08; }
   border: 1px solid transparent;
 }
 
-/* Tariff rows */
+/* Тарифы */
 #tariff-rows {
   font-size: var(--font-xs);
   color: var(--dim-2);
@@ -554,7 +549,7 @@ button.next-day:hover { background: #5a3c08; }
 }
 #tariff-rows > div:last-child { border-bottom: none; }
 
-/* Reservations */
+/* Бронирования */
 #reservations {
   font-size: var(--font-xs);
   color: var(--dim-2);
@@ -563,7 +558,7 @@ button.next-day:hover { background: #5a3c08; }
   min-height: 20px;
 }
 
-/* Status panel */
+/* Панель статуса */
 #status-panel {
   background: var(--bg-3);
   border: 1px solid var(--border);
@@ -597,7 +592,7 @@ button.next-day:hover { background: #5a3c08; }
 #status-panel .val  { color: var(--ok); }
 #status-panel .warn { color: var(--warn); }
 
-/* ── 11. SVG embedded text classes ─────────────────────────────── */
+/* Классы для текста, встроенного в SVG-графику */
 .zone-label  { font-family: Consolas, monospace; font-weight: 700; font-size: 11px; }
 .seat-id     { font-family: Consolas, monospace; font-size: 8px;  fill: #3a3a5a; text-anchor: middle; }
 .room-label  { font-family: Consolas, monospace; font-size: 10px; font-weight: 700; fill: #666; text-anchor: middle; }
@@ -606,7 +601,7 @@ button.next-day:hover { background: #5a3c08; }
 .timer-label { font-family: Consolas, monospace; font-size: 8px;  text-anchor: middle; fill: #888; }
 .count-label { font-family: Consolas, monospace; font-size: 9px;  fill: #888; }
 
-/* ── 12. Staff role indicators in sidebar ──────────────────────── */
+/* Иконки персонала в боковой панели */
 .staff-icon {
   display: inline-block;
   width: 8px; height: 8px;
