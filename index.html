@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CYBER ZONE — Симуляция</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <span class="brand">CYBER ZONE</span>
+    <span class="clock" id="clock">07:00</span>
+    <span class="day"   id="day">День 1 (Пн)</span>
+    <span class="promos" id="promos"></span>
+    <div id="speed-controls"></div>
+    <button class="start"    id="btn-start">СТАРТ</button>
+    <button class="pause"    id="btn-pause">ПАУЗА</button>
+    <button class="reset"    id="btn-reset">СБРОС</button>
+    <button class="next-day" id="btn-next-day" style="display:none">НОВЫЙ ДЕНЬ</button>
+  </div>
+  <div id="progress"></div>
+  <div id="main">
+    <div id="floor">
+      <div class="connect-status" id="conn">соединение…</div>
+      <svg id="scene" viewBox="0 0 1600 860" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div id="bottom">
+      <div id="tabs">
+        <div class="tab active" data-tab="log">Логи</div>
+        <div class="tab" data-tab="pc_chat">ПК Чат</div>
+        <div class="tab" data-tab="live_chat">Живой Чат</div>
+        <div class="tab" data-tab="sessions">Сессии</div>
+      </div>
+      <div id="textpane"></div>
+    </div>
+  </div>
+  <div id="sidebar">
+    <div><div class="side-hdr">Показатели</div><div id="stats"></div></div>
+    <div><div class="side-hdr">Зоны</div><div id="zones"></div></div>
+    <div><div class="side-hdr">Персонал</div><div id="staff"></div></div>
+    <div><div class="side-hdr">Тарифы (ПК / Конс / ВИП)</div><div id="tariff-rows"></div></div>
+    <div><div class="side-hdr">Брони</div><div id="reservations">  Нет</div></div>
+    <div><div class="side-hdr">Статус симуляции</div><div id="status-panel"></div></div>
+  </div>
+</div>
+<script type="module">
+/* ═══════════════════════════════════════════════════════════════
+   CYBER ZONE — JS L3 Shell
+   Pure projection: server state → DOM + SVG
+   No business logic — only network, rendering, button intents.
+   ═══════════════════════════════════════════════════════════════ */
+
+let state = null, currentTab = "log", ws = null, rt = null;
+
+// ── WebSocket ──────────────────────────────────────────────────
+function connect() {
+  const h = location.host || "127.0.0.1:8000";
+  ws = new WebSocket(`ws://${h}/ws`);
+  ws.onopen  = () => setConn("live","ok");
+  ws.onclose = () => { setConn("нет соединения…","err"); clearTimeout(rt); rt=setTimeout(connect,1500); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = ev => { state=JSON.parse(ev.data); renderAll(state); };
+}
+function setConn(t,c) { const e=document.getElementById("conn"); e.textContent="● "+t; e.className="connect-status "+c; }
+function send(o) { if(ws?.readyState===1) ws.send(JSON.stringify(o)); }
+connect();
+
+// ── Buttons ────────────────────────────────────────────────────
+document.getElementById("btn-start").onclick    = () => send({action:"start"});
+document.getElementById("btn-pause").onclick    = () => send({action:"pause"});
+document.getElementById("btn-reset").onclick    = () => send({action:"reset"});
+document.getElementById("btn-next-day").onclick = () => send({action:"new_day"});
+document.querySelectorAll("#tabs .tab").forEach(el => {
+  el.onclick = () => {
+    document.querySelectorAll("#tabs .tab").forEach(t=>t.classList.remove("active"));
+    el.classList.add("active"); currentTab=el.dataset.tab;
+    if(state) renderTextPane(state);
+  };
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════
+const fmt   = m => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+const money = n => `${Math.round(n)}₽`;
+const DAYS  = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+const esc   = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const TNAMES= {min:"Поминутный","1h":"1 Час","2h":"2 Часа","3h":"3 Часа","5h":"5 Часов"};
+const NPAL  = ["#F87171","#FB923C","#FCD34D","#A3E635","#34D399","#22D3EE","#60A5FA","#A78BFA","#F472B6","#5EEAD4","#FDE68A","#C4B5FD"];
+function nCol(n){ let h=0; for(let i=0;i<n.length;i++) h=(h*31+n.charCodeAt(i))|0; return NPAL[Math.abs(h)%NPAL.length]; }
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP BAR
+// ═══════════════════════════════════════════════════════════════
+function renderTop(s){
+  document.getElementById("clock").textContent=s.clock;
+  document.getElementById("day").textContent=`День ${s.day} (${DAYS[s.weekday]})`;
+  document.getElementById("promos").textContent=s.promotions_active?.join("  ·  ")||"";
+  const sp=s.config.close-s.config.open;
+  document.getElementById("progress").style.setProperty("--pct",(Math.max(0,Math.min(1,(s.time-s.config.open)/(sp||1)))*100)+"%");
+  const bS=document.getElementById("btn-start"),bP=document.getElementById("btn-pause"),bN=document.getElementById("btn-next-day");
+  if(s.running){bS.className="start live";bS.textContent="● В ЭФИРЕ";bS.disabled=true;bN.style.display="none";}
+  else{bS.className="start";bS.textContent=s.time>=s.config.close?"ЗАКРЫТО":"СТАРТ";bS.disabled=s.time>=s.config.close;bN.style.display=s.time>=s.config.close?"":"none";}
+  bP.className="pause"+(s.paused?" active":"");bP.textContent=s.paused?"ПРОДОЛЖИТЬ":"ПАУЗА";
+  const sc=document.getElementById("speed-controls");
+  if(!sc.dataset.rdy&&s.speed_options){s.speed_options.forEach(o=>{const b=document.createElement("button");b.className="speed";b.textContent=o+"×";b.dataset.speed=o;b.onclick=()=>send({action:"speed",value:o});sc.appendChild(b);});sc.dataset.rdy="1";}
+  sc.querySelectorAll(".speed").forEach(b=>b.classList.toggle("active",+b.dataset.speed===s.speed));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SIDEBAR
+// ═══════════════════════════════════════════════════════════════
+const R=(l,v,c)=>`<div class="stat-row"><span class="lbl">${l}</span><span class="val" style="color:${c}">${v}</span></div>`;
+
+function renderStats(s){
+  const pcB=s.seats.filter(x=>x.type==="pc").reduce((a,x)=>a+x.occupants,0);
+  const vipB=s.seats.filter(x=>x.type==="vip").reduce((a,x)=>a+x.occupants,0);
+  const conOcc=s.seats.filter(x=>x.type==="console"&&x.occupants>0).length;
+  const totCap=s.seats.reduce((a,x)=>a+x.capacity,0);
+  const totOcc=pcB+vipB+s.seats.filter(x=>x.type==="console").reduce((a,x)=>a+x.occupants,0);
+  const occ=totCap?Math.round(totOcc/totCap*100):0;
+  const exp=500+150+120+180+s.expenses+(s.food_stock?.purchase_cost||0);
+  const prof=s.revenue+s.food_revenue-exp;
+  const pend=s.order_queue.filter(o=>o.status!=="delivered").length;
+  const stock=Object.values(s.food_stock?.items||{}).reduce((a,x)=>a+x,0);
+  document.getElementById("stats").innerHTML=[
+    R("Выручка",money(s.revenue+s.food_revenue),"var(--ok)"),
+    R("Расходы",money(exp),"var(--err)"),
+    R("Прибыль",money(prof),prof>=0?"var(--ok)":"var(--err)"),
+    R("Обслужено",s.served,"var(--accent-2)"),
+    R("Очередь",s.queue.length,"var(--pink)"),
+    R("Лаунж",`${s.lounge.length}/${s.config.lounge_cap}`,"var(--warn)"),
+    R("Активных",s.sessions.length,"var(--pc)"),
+    R("Заполненность",occ+"%",occ<70?"var(--cyan)":occ<90?"var(--warn)":"var(--err)"),
+    R("Заказы",pend,pend?"var(--orange)":"var(--dim-2)"),
+    R("Упущено",s.lost_clients,s.lost_clients?"var(--err)":"var(--dim-2)"),
+    R("Запасы еды",stock,stock>20?"var(--ok)":stock>10?"var(--warn)":"var(--err)"),
+  ].join("");
+
+  document.getElementById("zones").innerHTML=[
+    {n:"ПК",tot:s.config.pc,bs:pcB,c:"var(--pc)"},
+    {n:"ВИП",tot:s.config.vip,bs:vipB,c:"var(--vip)"},
+    {n:"КОНС",tot:s.config.console,bs:conOcc,c:"var(--con)"},
+  ].map(z=>`<div class="zone-bar"><span class="zname" style="color:${z.c}">${z.n}</span><div class="track"><div class="fill" style="width:${z.tot?z.bs/z.tot*100:0}%;background:${z.c}"></div></div><span class="ratio">${z.bs}/${z.tot}</span></div>`).join("");
+
+  // Staff — admin name from server state, not hardcoded
+  const adminName = s.admin_name || "Админ";
+  const adminShort = adminName.split(" ")[0];
+  const as={idle:"ожидает",processing:"обрабатывает",seating_lounge:"обслуж. лаунж"}[s.admin.status]||"";
+  let sh=`<div class="staff-row">${adminShort} (Админ) — ${as}</div>`;
+  for(const w of s.hall_workers){const ws=w.status==="idle"?"ожидает":`доставка (${w.timer}м)`;sh+=`<div class="staff-row">${w.name.split(" ")[0]} — ${ws}</div>`;}
+  document.getElementById("staff").innerHTML=sh;
+
+  document.getElementById("reservations").textContent=s.reservations.length
+    ?s.reservations.slice(0,5).map(r=>`  ${r.client.name}: ${r.seat_type} @${fmt(r.time)}`).join("\n"):"  Нет";
+
+  const tr=document.getElementById("tariff-rows");
+  if(!tr.dataset.ok){
+    [["Поминутный","2₽/м","2₽/м","5₽/м"],["1 Час","200₽","200₽","350₽"],["2 Часа","350₽","300₽","500₽"],["3 Часа","450₽","500₽","750₽"],["5 Часов","600₽","700₽","1000₽"]]
+    .forEach(r=>{const d=document.createElement("div");d.textContent=`${r[0].padEnd(11)}${r[1].padStart(6)} / ${r[2].padStart(6)} / ${r[3].padStart(7)}`;tr.appendChild(d);});
+    tr.dataset.ok="1";
+  }
+}
+
+function renderStatus(s){
+  const el=document.getElementById("status-panel");let h="";
+  if(!s.running) h+=`<div class="closed-msg">КЛУБ ЗАКРЫТ</div>`;
+  else if(s.paused) h+=`<div class="pause-msg">ПАУЗА</div>`;
+  h+=`<div class="hdr">Последнее:</div><div class="val">  ${esc(s.last_action||"—")}</div><div class="hdr">Запасы:</div>`;
+  for(const[n,q]of Object.entries(s.food_stock?.items||{}))
+    h+=`<div class="${q<5?"warn":"val"}">  ${n.slice(0,20).padEnd(20)}${String(q).padStart(3)}шт</div>`;
+  el.innerHTML=h;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SVG HELPERS
+// ═══════════════════════════════════════════════════════════════
+const NS="http://www.w3.org/2000/svg";
+function E(tag,a={}){const e=document.createElementNS(NS,tag);for(const[k,v]of Object.entries(a))e.setAttribute(k,v);return e;}
+function T(p,x,y,s,a={}){const t=E("text",{x,y,...a});t.textContent=s;p.appendChild(t);return t;}
+const F="Consolas,monospace";
+
+// Person sprite: feet at (cx,cy). sc=1.0 ≈ 20px tall
+function drawPerson(p,cx,cy,app,sc=1.2){
+  if(!app)return;
+  const w=9*sc,h=19*sc;
+  const hT=cy-h, hM=cy-h*0.60, hB=cy-h*0.38;
+  p.appendChild(E("ellipse",{cx,cy,rx:w,ry:2.5,fill:"rgba(0,0,0,0.22)"}));
+  p.appendChild(E("rect",{x:cx-w*0.7,y:hB,width:w*1.4,height:cy-hB,fill:app.shirt,rx:w*0.15}));
+  p.appendChild(E("ellipse",{cx,cy:hM,rx:w*0.72,ry:(hB-hT)/2,fill:app.skin}));
+  const hh=h*0.21;
+  if(app.hair_style===0) p.appendChild(E("rect",{x:cx-w*0.73,y:hT-1,width:w*1.46,height:hh,fill:app.hair,rx:1}));
+  else if(app.hair_style===1) p.appendChild(E("path",{d:`M${cx-w*0.73},${hT+hh*0.6}Q${cx},${hT-4} ${cx+w*0.73},${hT+hh*0.6}L${cx+w*0.73},${hT}L${cx-w*0.73},${hT}Z`,fill:app.hair}));
+  else p.appendChild(E("polygon",{points:`${cx-w*0.73},${hB-h*0.14} ${cx},${hT-3} ${cx+w*0.73},${hB-h*0.14}`,fill:app.hair}));
+  p.appendChild(E("ellipse",{cx:cx-w*0.27,cy:hT+h*0.43,rx:w*0.11,ry:h*0.07,fill:"#111"}));
+  p.appendChild(E("ellipse",{cx:cx+w*0.27,cy:hT+h*0.43,rx:w*0.11,ry:h*0.07,fill:"#111"}));
+  if(app.glasses){
+    const gy=hT+h*0.41;
+    p.appendChild(E("circle",{cx:cx-w*0.28,cy:gy,r:h*0.13,fill:"none",stroke:"#888","stroke-width":0.8}));
+    p.appendChild(E("circle",{cx:cx+w*0.28,cy:gy,r:h*0.13,fill:"none",stroke:"#888","stroke-width":0.8}));
+    p.appendChild(E("line",{x1:cx-w*0.15,y1:gy,x2:cx+w*0.15,y2:gy,stroke:"#888","stroke-width":0.8}));
+  }
+}
+
+function drawBubble(p,cx,yTop,text,color){
+  const tw=text.length*5.8+10,bx=cx-tw/2,by=yTop-16;
+  p.appendChild(E("rect",{x:bx,y:by,width:tw,height:14,fill:"#0d0d22",stroke:color,"stroke-width":1,rx:3}));
+  p.appendChild(E("polygon",{points:`${cx-3},${by+14} ${cx+3},${by+14} ${cx},${by+19}`,fill:"#0d0d22",stroke:color}));
+  const t=E("text",{x:cx,y:by+10,"text-anchor":"middle",fill:color,"font-size":9,"font-family":F});
+  t.textContent=text;p.appendChild(t);
+}
+
+function drawSeat(p,mx,my,stroke,label,occupied){
+  p.appendChild(E("rect",{x:mx-38,y:my+26,width:76,height:12,fill:"#06060f",rx:2}));
+  p.appendChild(E("rect",{x:mx-38,y:my+20,width:76,height:12,fill:"#131328",stroke:"#1e1e42","stroke-width":1,rx:2}));
+  p.appendChild(E("rect",{x:mx-3,y:my+12,width:6,height:10,fill:"#0c0c22"}));
+  p.appendChild(E("rect",{x:mx-9,y:my+19,width:18,height:2,fill:"#16163a",rx:1}));
+  p.appendChild(E("rect",{x:mx-23,y:my-10,width:46,height:25,fill:"#0d0d24",stroke,
+    "stroke-width":occupied?2:1.5,rx:3}));
+  p.appendChild(E("rect",{x:mx-19,y:my-7,width:38,height:19,fill:occupied?"#06101e":"#04040e",
+    stroke:occupied?"#1a3658":"#0e0e2a","stroke-width":0.5,rx:1}));
+  if(occupied) p.appendChild(E("rect",{x:mx-19,y:my-7,width:38,height:19,fill:"none",
+    stroke,"stroke-width":0.6,opacity:0.35,rx:1}));
+  T(p,mx,my+31,label,{"text-anchor":"middle","font-size":9,"font-family":F,fill:occupied?"#5a5a8a":"#2a2a4a"});
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MAIN SCENE
+// ═══════════════════════════════════════════════════════════════
+function renderScene(s){
+  const sc=document.getElementById("scene");sc.innerHTML="";
+  const W=1600,H=860,FH=130,fy=H-FH;
+
+  sc.appendChild(E("rect",{x:0,y:0,width:W,height:H,fill:"#07071a"}));
+  const defs=E("defs"),pat=E("pattern",{id:"dots",width:36,height:36,patternUnits:"userSpaceOnUse"});
+  pat.appendChild(E("circle",{cx:18,cy:18,r:0.7,fill:"#0e0e28"}));
+  defs.appendChild(pat);sc.appendChild(defs);
+  sc.appendChild(E("rect",{x:0,y:0,width:W,height:fy,fill:"url(#dots)"}));
+
+  const sesBySeat={},ordBySes={},seatXY={};
+  for(const ss of s.sessions)(sesBySeat[ss.seat_id]||=[]).push(ss);
+  for(const o of s.order_queue)ordBySes[o.session_id]=o;
+  const extSeats=new Set(s.chats.filter(c=>c.kind==="trigger_extend"&&s.time-c.time<=10).map(c=>c.seat));
+  const ZC={pc:"#3B82F6",vip:"#D97706",console:"#059669"};
+  const rX=W*0.615;
+  const ZONES=[
+    {t:"pc",name:"ЗОНА ПК",x1:8,y1:8,x2:W*0.607,y2:fy-8},
+    {t:"vip",name:"VIP ЗОНА",x1:rX,y1:8,x2:W-8,y2:fy*0.44},
+    {t:"console",name:"КОНСОЛИ",x1:rX,y1:fy*0.475,x2:W-8,y2:fy-8},
+  ];
+
+  for(const z of ZONES){
+    const C=ZC[z.t];
+    sc.appendChild(E("rect",{x:z.x1,y:z.y1,width:z.x2-z.x1,height:z.y2-z.y1,
+      fill:"rgba(6,6,20,0.88)",stroke:C,"stroke-width":1,"stroke-dasharray":"5 4",rx:5}));
+    T(sc,z.x1+10,z.y1+16,z.name,{"font-family":F,"font-weight":"700","font-size":13,fill:C});
+
+    const seats=s.seats.filter(x=>x.type===z.t);
+    if(!seats.length)continue;
+    const zw=z.x2-z.x1-16,zh=z.y2-z.y1-30;
+    const cols=z.t==="pc"?s.config.pc_cols:Math.max(1,Math.min(seats.length,Math.max(1,Math.floor(zw/135))));
+    const rows=Math.ceil(seats.length/cols);
+    const cw=zw/cols,ch=Math.max(92,zh/Math.max(rows,1));
+
+    seats.forEach((seat,idx)=>{
+      const r=Math.floor(idx/cols),c=idx%cols;
+      const mx=z.x1+8+c*cw+cw/2;
+      const my=z.y1+30+r*ch+ch/2+8;
+      seatXY[seat.id]=[mx,my];
+      const list=sesBySeat[seat.id]||[];
+      drawSeat(sc,mx,my,C,seat.id,list.length>0);
+      list.slice(0,seat.capacity).forEach((ses,i)=>{
+        const px=(seat.capacity===1||list.length===1)?mx:mx-14+i*28;
+        const py=my-22;
+        drawPerson(sc,px,py,ses.appearance,1.2);
+        const ord=ordBySes[ses.id];
+        if(ord&&["pending","preparing"].includes(ord.status))
+          drawBubble(sc,px,py-26,(ord.food?.name||"").slice(0,12),"#FB923C");
+        else if(extSeats.has(ses.seat_id))
+          drawBubble(sc,px,py-26,"Продление","#FBBF24");
+      });
+    });
+  }
+
+  // ── Floor rooms ─────────────────────────────────────────────
+  const ROOMS=[
+    {x1:0,x2:W*0.10,fill:"#0a0a28",brd:"#1a1a48",label:"Туалет"},
+    {x1:W*0.105,x2:W*0.285,fill:"#150b03",brd:"#381805",label:"Бар"},
+    {x1:W*0.29,x2:W*0.607,fill:"#050f0c",brd:"#0c2520",label:"Лаунж"},
+    {x1:W*0.615,x2:W*0.735,fill:"#070e1c",brd:"#121f40",label:"Администратор"},
+    {x1:W*0.74,x2:W,fill:"#060f06",brd:"#0c2010",label:"Вход"},
+  ];
+  for(const r of ROOMS){
+    sc.appendChild(E("rect",{x:r.x1+1,y:fy+1,width:r.x2-r.x1-2,height:FH-2,fill:r.fill,stroke:r.brd,"stroke-width":1}));
+    T(sc,(r.x1+r.x2)/2,fy+16,r.label,{"text-anchor":"middle","font-size":12,"font-weight":"700","font-family":F,fill:"#666"});
+  }
+
+  // ── Туалет ──────────────────────────────────────────────────
+  (s.bathroom_clients||[]).slice(0,4).forEach((bc,i)=>{
+    const bx=W*0.025+(i%2)*42,by=fy+55+Math.floor(i/2)*42;
+    drawPerson(sc,bx,by,bc.appearance,1.0);
+    T(sc,bx,by+14,`${bc.timer}м`,{"text-anchor":"middle","font-size":9,"font-family":F,fill:"#555"});
+  });
+
+  // ── Лаунж ───────────────────────────────────────────────────
+  s.lounge.slice(0,s.config.lounge_cap).forEach((lc,i)=>{
+    const lx=W*0.305+(i%5)*48,ly=fy+52+Math.floor(i/5)*48;
+    drawPerson(sc,lx,ly,lc.client.appearance,1.05);
+    const f=Math.max(0,lc.patience/30);
+    const c=lc.patience>15?"#4ADE80":lc.patience>7?"#FBBF24":"#EF4444";
+    sc.appendChild(E("rect",{x:lx-12,y:ly+12,width:24,height:3,fill:"#1a1a3a",rx:1}));
+    sc.appendChild(E("rect",{x:lx-12,y:ly+12,width:24*f,height:3,fill:c,rx:1}));
+  });
+
+  // ── Администратор (dynamic name & appearance from server) ───
+  const AX=W*0.675,AY=fy+76;
+  const admName=s.admin_name||"Админ";
+  const admApp=s.admin_appearance||{skin:"#F1C27D",shirt:"#1d4ed8",hair:"#2C1810",glasses:true,hair_style:0};
+  const admC={idle:"#818CF8",processing:"#FBBF24",seating_lounge:"#F472B6"}[s.admin.status]||"#818CF8";
+  sc.appendChild(E("rect",{x:AX-32,y:AY+8,width:64,height:10,fill:"#131328",stroke:"#252548",rx:2}));
+  sc.appendChild(E("rect",{x:AX-30,y:AY-46,width:60,height:56,fill:"rgba(10,10,30,0.75)",stroke:admC,"stroke-width":1.5,rx:5}));
+  drawPerson(sc,AX,AY,admApp,1.3);
+  T(sc,AX,AY+28,admName.split(" ")[0],{"text-anchor":"middle","font-size":10,"font-weight":"700","font-family":F,fill:admC});
+
+  // Clients being processed by admin — shown NEXT to admin desk, not in Вход
+  if(["processing","seating_lounge"].includes(s.admin.status)&&s.admin.target){
+    const members=s.admin.group_members?.length?s.admin.group_members:[s.admin.target];
+    members.slice(0,4).forEach((m,j)=>drawPerson(sc,AX+46+j*26,AY,m.appearance,1.05));
+  }
+
+  // ── Работники зала ──────────────────────────────────────────
+  s.hall_workers.forEach((w,i)=>{
+    let wx=W*0.16+i*58,wy=fy+76;  // default: in Бар
+    // When delivering, move to client's seat
+    if(w.status==="delivering"&&w.order_id!=null){
+      const ord=s.order_queue.find(o=>o.id===w.order_id);
+      if(ord){const ses=s.sessions.find(x=>x.id===ord.session_id);if(ses&&seatXY[ses.seat_id]){[wx,wy]=seatXY[ses.seat_id];wy+=60;}}
+    }
+    const wc=w.status==="idle"?"#4ADE80":"#FB923C";
+    sc.appendChild(E("rect",{x:wx-28,y:wy-46,width:56,height:52,fill:"rgba(10,10,30,0.75)",stroke:wc,"stroke-width":1,rx:5}));
+    drawPerson(sc,wx,wy,w.appearance,1.2);
+    T(sc,wx,wy+28,w.name.split(" ")[0],{"text-anchor":"middle","font-size":10,"font-weight":"700","font-family":F,fill:wc});
+    if(w.status==="delivering")T(sc,wx+28,wy-38,"[зак]",{"text-anchor":"middle","font-size":9,"font-weight":"bold","font-family":F,fill:"#FB923C"});
+  });
+
+  // ── Вход — QUEUE (new clients appear here, NOT at admin) ────
+  const QX=W*0.762,QY=fy+42;
+  if(s.queue.length)
+    T(sc,QX,QY-12,`Очередь: ${s.queue.length}`,{"font-size":12,"font-weight":"700","font-family":F,fill:"#F472B6"});
+  s.queue.slice(0,16).forEach((cl,i)=>{
+    drawPerson(sc,QX+(i%4)*44,QY+Math.floor(i/4)*44,cl.appearance,1.05);
+  });
+  if(s.queue.length>16)
+    T(sc,QX+180,QY+40,`+${s.queue.length-16}`,{"font-size":11,"font-family":F,fill:"#888"});
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TEXT PANE
+// ═══════════════════════════════════════════════════════════════
+function renderTextPane(s){
+  const el=document.getElementById("textpane");
+  if(currentTab==="log"){
+    el.innerHTML=s.logs.map(l=>`<span class="ts">[${fmt(l.time)}]</span> <span class="${l.type}">${esc(l.text)}</span>`).join("\n");
+  }else if(currentTab==="pc_chat"||currentTab==="live_chat"){
+    const flt=currentTab==="pc_chat"?c=>c.kind==="pc_chat":c=>["live_chat","trigger_food","trigger_extend"].includes(c.kind);
+    el.innerHTML=s.chats.filter(flt).map(c=>{
+      const nc=nCol(c.sender);
+      return `<span class="ts">[${fmt(c.time)}]</span> <span style="color:${nc};font-weight:700">${esc(c.sender)}</span><span class="${c.kind}">: ${esc(c.text)}</span>`;
+    }).join("\n");
+  }else if(currentTab==="sessions"){
+    el.innerHTML=`<table><thead><tr><th>ID</th><th>Клиент</th><th>Место</th><th>Игра</th><th>Тариф</th><th>До</th></tr></thead><tbody>${
+      s.sessions.map(ss=>`<tr><td>${ss.id}</td><td>${esc(ss.client_name)}</td><td>${ss.seat_id}</td><td>${esc(ss.game?.name||"")}</td><td>${TNAMES[ss.tariff]||ss.tariff}</td><td>${fmt(ss.end)}</td></tr>`).join("")
+    }</tbody></table>`;
+  }
+  el.scrollTop=el.scrollHeight;
+}
+
+function renderAll(s){renderTop(s);renderStats(s);renderStatus(s);renderScene(s);renderTextPane(s);}
+</script>
+</body>
+</html>
