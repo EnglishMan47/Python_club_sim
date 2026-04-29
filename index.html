@@ -149,7 +149,10 @@ function renderStats(s){
   const adminShort = adminName.split(" ")[0];
   const as={idle:"ожидает",processing:"обрабатывает",seating_lounge:"обслуж. лаунж"}[s.admin.status]||"";
   let sh=`<div class="staff-row">${adminShort} (Админ) — ${as}</div>`;
-  for(const w of s.hall_workers){const ws=w.status==="idle"?"ожидает":`доставка (${w.timer}м)`;sh+=`<div class="staff-row">${w.name.split(" ")[0]} — ${ws}</div>`;}
+  for(const w of s.hall_workers){
+    const ws=w.status==="idle"?"ожидает":w.status==="serving"?`обслуживает (${w.timer}м)`:`доставка (${w.timer}м)`;
+    sh+=`<div class="staff-row">${w.name.split(" ")[0]} — ${ws}</div>`;
+  }
   document.getElementById("staff").innerHTML=sh;
 
   document.getElementById("reservations").textContent=s.reservations.length
@@ -331,35 +334,60 @@ function renderScene(s){
 
   // ── Работники зала ──────────────────────────────────────────
   s.hall_workers.forEach((w,i)=>{
-    let wx=W*0.16+i*58,wy=fy+76;  // default: in Бар
-    // When delivering, move to client's seat
+    let wx=W*0.16+i*58,wy=fy+76;  // по умолчанию: в Баре
     if(w.status==="delivering"&&w.order_id!=null){
+      // Во время доставки — у места клиента
       const ord=s.order_queue.find(o=>o.id===w.order_id);
       if(ord){const ses=s.sessions.find(x=>x.id===ord.session_id);if(ses&&seatXY[ses.seat_id]){[wx,wy]=seatXY[ses.seat_id];wy+=60;}}
+    } else if(w.status==="serving"&&w.target_seat_id){
+      // После доставки работник остаётся у клиента (~8 тиков) — видно на визуализации
+      if(seatXY[w.target_seat_id]){[wx,wy]=seatXY[w.target_seat_id];wy+=60;}
     }
-    const wc=w.status==="idle"?"#4ADE80":"#FB923C";
+    const wc=w.status==="idle"?"#4ADE80":w.status==="serving"?"#22D3EE":"#FB923C";
     sc.appendChild(E("rect",{x:wx-28,y:wy-46,width:56,height:52,fill:"rgba(10,10,30,0.75)",stroke:wc,"stroke-width":1,rx:5}));
     drawPerson(sc,wx,wy,w.appearance,1.2);
     T(sc,wx,wy+28,w.name.split(" ")[0],{"text-anchor":"middle","font-size":10,"font-weight":"700","font-family":F,fill:wc});
     if(w.status==="delivering")T(sc,wx+28,wy-38,"[зак]",{"text-anchor":"middle","font-size":9,"font-weight":"bold","font-family":F,fill:"#FB923C"});
+    if(w.status==="serving")T(sc,wx+28,wy-38,"[обсл]",{"text-anchor":"middle","font-size":9,"font-weight":"bold","font-family":F,fill:"#22D3EE"});
   });
 
-  // ── Вход — QUEUE (new clients appear here, NOT at admin) ────
+  // ── Вход — сначала клиенты на панели «Вход», затем очередь к администратору ────
   const QX=W*0.762,QY=fy+42;
-  if(s.queue.length)
-    T(sc,QX,QY-12,`Очередь: ${s.queue.length}`,{"font-size":12,"font-weight":"700","font-family":F,fill:"#F472B6"});
-  s.queue.slice(0,16).forEach((cl,i)=>{
-    drawPerson(sc,QX+(i%4)*44,QY+Math.floor(i/4)*44,cl.appearance,1.05);
+  // entrance: клиенты только что вошли (2 тика видны здесь до перехода в очередь)
+  const entranceClients=(s.entrance||[]).map(e=>e.client);
+  // queue: ждут у администратора (отображаются тут до момента обработки)
+  const allAtDoor=[...entranceClients,...s.queue];
+  if(allAtDoor.length){
+    const entrLabel=entranceClients.length?`Вход: ${entranceClients.length}  `:""
+    const qLabel=s.queue.length?`Очередь: ${s.queue.length}`:""
+    T(sc,QX,QY-12,entrLabel+qLabel,{"font-size":11,"font-weight":"700","font-family":F,fill:"#F472B6"});
+  }
+  // Клиенты в очереди отображаются с чуть другим оттенком чтобы отличить от «Вход»
+  entranceClients.slice(0,8).forEach((cl,i)=>{
+    const ex=QX+(i%4)*44, ey=QY+Math.floor(i/4)*44;
+    // Мигающий круг — «только что вошли»
+    sc.appendChild(E("circle",{cx:ex,cy:ey-28,r:14,fill:"none",stroke:"#22D3EE","stroke-width":1.5,opacity:0.7}));
+    drawPerson(sc,ex,ey,cl.appearance,1.05);
   });
-  if(s.queue.length>16)
-    T(sc,QX+180,QY+40,`+${s.queue.length-16}`,{"font-size":11,"font-family":F,fill:"#888"});
+  const qOffset=Math.min(entranceClients.length,8);
+  s.queue.slice(0,16-qOffset).forEach((cl,i)=>{
+    const qi=i+qOffset;
+    drawPerson(sc,QX+(qi%4)*44,QY+Math.floor(qi/4)*44,cl.appearance,1.05);
+  });
+  if(allAtDoor.length>16)
+    T(sc,QX+180,QY+40,`+${allAtDoor.length-16}`,{"font-size":11,"font-family":F,fill:"#888"});
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  TEXT PANE
+//  TEXT PANE — с умной прокруткой: пользователь может листать
+//  историю, не теряя позицию при новых сообщениях
 // ═══════════════════════════════════════════════════════════════
 function renderTextPane(s){
   const el=document.getElementById("textpane");
+  // Запоминаем позицию ДО обновления контента
+  const distFromBottom=el.scrollHeight-el.scrollTop-el.clientHeight;
+  const wasNearBottom=distFromBottom<60;   // порог: 60px от низа = «у дна»
+
   if(currentTab==="log"){
     el.innerHTML=s.logs.map(l=>`<span class="ts">[${fmt(l.time)}]</span> <span class="${l.type}">${esc(l.text)}</span>`).join("\n");
   }else if(currentTab==="pc_chat"||currentTab==="live_chat"){
@@ -373,7 +401,17 @@ function renderTextPane(s){
       s.sessions.map(ss=>`<tr><td>${ss.id}</td><td>${esc(ss.client_name)}</td><td>${ss.seat_id}</td><td>${esc(ss.game?.name||"")}</td><td>${TNAMES[ss.tariff]||ss.tariff}</td><td>${fmt(ss.end)}</td></tr>`).join("")
     }</tbody></table>`;
   }
-  el.scrollTop=el.scrollHeight;
+
+  // Автопрокрутка: только если пользователь был «у дна».
+  // Если он листал вверх — не трогаем его позицию.
+  if(wasNearBottom){
+    el.scrollTop=el.scrollHeight;
+  }
+  // Иначе: браузер сам восстановит примерную позицию после innerHTML,
+  // либо мы можем сохранить смещение от низа:
+  else{
+    el.scrollTop=Math.max(0,el.scrollHeight-el.clientHeight-distFromBottom);
+  }
 }
 
 function renderAll(s){renderTop(s);renderStats(s);renderStatus(s);renderScene(s);renderTextPane(s);}
