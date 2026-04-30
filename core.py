@@ -87,19 +87,19 @@ MENU = (
 INITIAL_STOCK = {f.name: 20 for f in MENU}
 WAREHOUSE_RESTOCK = {f.name: 30 for f in MENU}
 
-Game = namedtuple("Game", ["name","genre","max_players"])
+Game = namedtuple("Game", ["name","max_players"])
 PC_GAMES = (
-    Game("DOTA 2","MOBA",5), Game("League of Legends","MOBA",5),
-    Game("CS2","FPS",5), Game("Overwatch 2","FPS",5),
-    Game("Minecraft","Sandbox",8), Game("Valorant","FPS",5),
-    Game("GTA V","Action",4), Game("PUBG","BR",4),
-    Game("Dead by Daylight","Horror",5), Game("Sims 4","Life",1),
-    Game("Standoff 2","FPS",5), Game("Genshin Impact","RPG",4),
+    Game("DOTA 2",5), Game("League of Legends",5),
+    Game("CS2",5), Game("Overwatch 2",5),
+    Game("Minecraft",8), Game("Valorant",5),
+    Game("GTA V",4), Game("PUBG",4),
+    Game("Dead by Daylight",5), Game("Sims 4",1),
+    Game("Standoff 2",5), Game("Genshin Impact",4),
 )
 CONSOLE_GAMES = (
-    Game("FIFA 24","Sports",2), Game("Tekken 8","Fighting",2),
-    Game("Mortal Kombat 1","Fighting",2), Game("It Takes Two","Co-op",2),
-    Game("Split Fiction","Co-op",2), Game("The Quarry","Horror",2),
+    Game("FIFA 24",2), Game("Tekken 8",2),
+    Game("Mortal Kombat 1",2), Game("It Takes Two",2),
+    Game("Split Fiction",2), Game("The Quarry",2),
 )
 
 # Имена-запасные (используются если файлы с данными не найдены)
@@ -220,7 +220,7 @@ def make_seats(cfg):
 Client = namedtuple("Client",[
     "id","name","gender","pref","tariff","duration",
     "arrived","game","group","appearance",
-    "reservation","reservation_time","visits","rank",
+    "reservation","reservation_time"
 ])
 
 def generate_identity(rng, nd):
@@ -260,11 +260,8 @@ def make_client(cid, t, rng, nd, group=None, gg=None, gp=None):
         if res_time >= CONFIG["close"]:
             has_res = False; res_time = None
 
-    visits, rng = rng_int(rng, 0, 15)
-    rank = ("Легенда" if visits > 20 else "Про" if visits > 10
-            else "Постоянный" if visits > 3 else "Новичок")
     return Client(cid, name, gender, pref, tk_, dur, t, game, group,
-                  app, has_res, res_time, visits, rank), rng
+                  app, has_res, res_time), rng
 
 def make_group(sid, t, gid, rng, nd):
     size,rng=rng_int(rng,2,4); r,rng=rng_next(rng)
