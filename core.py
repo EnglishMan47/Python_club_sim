@@ -224,7 +224,7 @@ Client = namedtuple("Client",[
 ])
 
 def generate_identity(rng, nd):
-    is_m,rng=rng_chance(rng,0.55); g="m" if is_m else "f"
+    is_m,rng=rng_chance(rng,0.5); g="m" if is_m else "f"
     first,rng=rng_pick(rng,nd[g]["names"]); last,rng=rng_pick(rng,nd[g]["surnames"])
     return f"{first} {last}", g, rng
 
@@ -264,7 +264,7 @@ def make_client(cid, t, rng, nd, group=None, gg=None, gp=None):
                   app, has_res, res_time), rng
 
 def make_group(sid, t, gid, rng, nd):
-    size,rng=rng_int(rng,2,4); r,rng=rng_next(rng)
+    size,rng=rng_int(rng,2,5); r,rng=rng_next(rng)
     pref="console" if r<0.25 else "pc"
     if pref=="console": size=min(size,2)
     pool=CONSOLE_GAMES if pref=="console" else PC_GAMES
@@ -354,19 +354,17 @@ _WORKER_APPEARANCES = (
     Appearance("#E0AC69","#D97706","#1A1A2E",False,2),
 )
 
-def initial_state(seed=42, names_data=None, phrases_data=None):
+def initial_state(seed=67, names_data=None, phrases_data=None):
     cfg = CONFIG
     nd = names_data if names_data is not None else load_names_data()
     pd = phrases_data if phrases_data is not None else load_phrases()
     rng0 = rng_new(seed ^ 0xABCD)
-    an,  rng0 = rng_pick(rng0, nd["f"]["names"])
-    as_, rng0 = rng_pick(rng0, nd["f"]["surnames"])
-    admin_name = f"{an} {as_}"
+    admin_name, _, rng0 = generate_identity(rng0, nd)
     admin_app, rng0 = make_appearance(rng0)
     admin_app = admin_app._replace(shirt="#1d4ed8")
-    wn1, rng0 = rng_pick(rng0, nd["m"]["names"]); ws1, rng0 = rng_pick(rng0, nd["m"]["surnames"])
+    wn1, _, rng0 = generate_identity(rng0, nd)
     wa1, rng0 = make_appearance(rng0)
-    wn2, rng0 = rng_pick(rng0, nd["f"]["names"]); ws2, rng0 = rng_pick(rng0, nd["f"]["surnames"])
+    wn2, _, rng0 = generate_identity(rng0, nd)
     wa2, rng0 = make_appearance(rng0)
     return World(
         time=cfg["open"], day=1, weekday=0, running=False, paused=False, rng=rng_new(seed),
@@ -375,8 +373,8 @@ def initial_state(seed=42, names_data=None, phrases_data=None):
         admin=AdminState("idle",0,None,None),
         admin_name=admin_name, admin_appearance=admin_app,
         hall_workers=(
-            HallWorker("w1", f"{wn1} {ws1}", "idle", 0, None, wa1, None),
-            HallWorker("w2", f"{wn2} {ws2}", "idle", 0, None, wa2, None),
+            HallWorker("w1", wn1, "idle", 0, None, wa1, None),
+            HallWorker("w2", wn2, "idle", 0, None, wa2, None),
         ),
         order_queue=(), food_stock=restock_from_warehouse(make_food_stock()),
         revenue=0.0, food_revenue=0.0, expenses=0.0,
@@ -879,13 +877,26 @@ def tick(state):
 def next_day(state):
     new = initial_state(seed=state.rng.seed + 9999,
                         names_data=state.names_data, phrases_data=state.phrases_data)
-    nd = state.day + 1; wd = (nd - 1) % 7
+    
+    nd = state.day + 1
+    wd = (nd - 1) % 7
+
     fs = state.food_stock
-    if fs.warehouse_timer <= 1: fs = refill_warehouse(fs)
-    else: fs = fs._replace(warehouse_timer=fs.warehouse_timer - 1)
+    if fs.warehouse_timer <= 1: 
+        fs = refill_warehouse(fs)
+    else: 
+        fs = fs._replace(warehouse_timer=fs.warehouse_timer - 1)
     fs = restock_from_warehouse(fs._replace(purchase_cost=0.0))
+
     return new._replace(
-        day=nd, weekday=wd, promotions=state.promotions, food_stock=fs,
+        day=nd, 
+        weekday=wd, 
+        promotions=state.promotions, 
+        food_stock=fs,
+        admin_name=state.admin_name,
+        admin_appearance=state.admin_appearance,
+        hall_workers=state.hall_workers,
+        admin=AdminState("idle", 0, None, None),
         logs=(Log(CONFIG["open"], f"День {nd} начинается!", "system"),),
         last_action=f"День {nd} начинается!",
     )
