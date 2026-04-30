@@ -38,8 +38,8 @@ logger.propagate = False
 # Изменяемое состояние мира — только здесь, на L3
 # Core видит эти значения как аргументы чистых функций
 STATE: core.World = core.initial_state(seed=42)
-SPEED: int        = 1
-SPEED_OPTIONS     = (1, 2, 5, 10, 20, 60)
+SPEED: int = 1
+SPEED_OPTIONS = (1, 2, 5, 10, 20, 60)
 CLIENTS: Set[WebSocket] = set()
 
 WEB = ROOT
@@ -136,7 +136,7 @@ def _parse_message(text: str, client_id: int) -> dict | None:
 
 # Обработка команд
 def _handle_command(msg: dict) -> None:
-    """Применяет команду пользователя. Единственное место мутации STATE."""
+    """Применяет команду пользователя"""
     global STATE, SPEED
     action = msg.get("action")
 

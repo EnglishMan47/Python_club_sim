@@ -45,10 +45,6 @@
   </div>
 </div>
 <script type="module">
-/* 
-   CYBER ZONE — JS L3 Shell
-   Pure projection: server state → DOM + SVG
- */
 
 let state = null, currentTab = "log", ws = null, rt = null;
 
@@ -383,7 +379,6 @@ function renderScene(s){
   
   entranceClients.slice(0,8).forEach((cl,i)=>{
     const ex=QX+(i%4)*44, ey=QY+Math.floor(i/4)*44;
-    // Круг теперь центрирован по груди персонажа (ey - 10)
     sc.appendChild(E("circle",{cx:ex,cy:ey-10,r:16,fill:"none",stroke:"#22D3EE","stroke-width":1.5,opacity:0.7}));
     drawPerson(sc,ex,ey,cl.appearance,1.05);
     T(sc, ex, ey-22, formatName(cl.name), {"text-anchor":"middle","font-size":8,"font-family":F,fill:"#ccc"});
